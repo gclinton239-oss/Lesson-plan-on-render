@@ -1,0 +1,5 @@
+Flask
+requests
+flask-cors
+python-dotenv
+gunicorn==21.2.0
