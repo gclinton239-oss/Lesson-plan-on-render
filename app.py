@@ -15,12 +15,15 @@ CORS(app)  # Allow frontend to connect
 # Root route – test with http://localhost:5000
 @app.route("/")
 def home():
-    return "<h3>Backend is Running! Connect to /generate</h3>"
+    return jsonify({
+        "status": "success",
+        "message": "Backend is Running! Connect to /generate"
+    })
 
 # AI generation route
 @app.route("/generate", methods=["POST"])
 def generate():
-    data = request.json
+    data = request.get_json()
     prompt = data.get("prompt", "").strip()
 
     if not prompt:
@@ -38,8 +41,8 @@ You are an expert Ghanaian lesson planner for ICT, Science, or other subjects.
 You must generate responses in the following strict format:
 
 Teacher-Learner Activities:
-1. Using T/LR, [activity related to first exemplar].
-2. Using T/LR,[activity related to second exemplar].
+1. [Specific activity related to first exemplar, using the T/L Resources].
+2. [Specific activity related to second exemplar, using the T/L Resources].
 ...
 
 [KEY CONCEPT 1 IN ALL CAPS]
@@ -55,7 +58,7 @@ Exercise;
 
 Rules:
 - Start with "Teacher-Learner Activities:" followed by numbered activities (1., 2., etc.).
-- DO NOT use "Using the TLR," at the beginning of activities.
+- DO NOT use "Using T/LR," at the beginning of activities.
 - Write activities in clear, instructional language (e.g., "Guide learners to discuss...").
 - Each activity must match one exemplar.
 - Use ALL CAPS for concept headings (e.g., ELECTRONIC SPREADSHEET).
@@ -66,7 +69,7 @@ Rules:
 """
 
         response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",  # ✅ Fixed: no extra spaces
+            "https://openrouter.ai/api/v1/chat/completions",  # ✅ Fixed: no trailing spaces
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
@@ -113,5 +116,5 @@ Rules:
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8080))  # ✅ Use 8080 for Cloud Run
     app.run(host="0.0.0.0", port=port, debug=False)
