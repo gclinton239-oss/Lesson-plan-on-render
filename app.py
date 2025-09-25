@@ -9,23 +9,17 @@ from flask_cors import CORS
 load_dotenv()
 
 # =========================================================
-# 🚨 STEP 1: DEFINE YOUR FIREBASE URL(S) HERE 🚨
-# Replace the URL below with the exact URL of your deployed
-# frontend on Firebase Hosting (e.g., https://my-app-name.web.app)
-# If you have multiple allowed origins (like localhost), use a list:
-# ALLOWED_ORIGINS = ["https://your-project-id.web.app", "http://localhost:3000"]
-
-FIREBASE_FRONTEND_URL = "URL: https://klint-lesson-plan-gen.web.app" 
+# ✅ CORRECTED: Use ONLY the exact frontend URL (no extra text/spaces)
+# Replace this with your actual frontend URL on Render
+FIREBASE_FRONTEND_URL = "https://lesson-plan-frontend.onrender.com"
 # =========================================================
 
 # Create app
 app = Flask(__name__)
 
 # =========================================================
-# 💡 STEP 2: CONFIGURE CORS with the specific origin(s)
-# This allows your Firebase frontend to talk to your Render backend
-CORS(app, resources={r"/*": {"origins": FIREBASE_FRONTEND_URL}})
-# If using a list: CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGINS}})
+# ✅ CORRECTED: Proper CORS configuration
+CORS(app, origins=[FIREBASE_FRONTEND_URL])
 # =========================================================
 
 # Root route – test with http://localhost:5000
@@ -85,7 +79,7 @@ Rules:
 """
 
         response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
+            "https://openrouter.ai/api/v1/chat/completions",  # ✅ Fixed: removed trailing spaces
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
