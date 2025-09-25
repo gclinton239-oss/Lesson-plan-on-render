@@ -8,9 +8,25 @@ from flask_cors import CORS
 # Load environment variables
 load_dotenv()
 
+# =========================================================
+# 🚨 STEP 1: DEFINE YOUR FIREBASE URL(S) HERE 🚨
+# Replace the URL below with the exact URL of your deployed
+# frontend on Firebase Hosting (e.g., https://my-app-name.web.app)
+# If you have multiple allowed origins (like localhost), use a list:
+# ALLOWED_ORIGINS = ["https://your-project-id.web.app", "http://localhost:3000"]
+
+FIREBASE_FRONTEND_URL = "https://my-web-app-41120.web.app" 
+# =========================================================
+
 # Create app
 app = Flask(__name__)
-CORS(app)  # Allow frontend to connect
+
+# =========================================================
+# 💡 STEP 2: CONFIGURE CORS with the specific origin(s)
+# This allows your Firebase frontend to talk to your Render backend
+CORS(app, resources={r"/*": {"origins": FIREBASE_FRONTEND_URL}})
+# If using a list: CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGINS}})
+# =========================================================
 
 # Root route – test with http://localhost:5000
 @app.route("/")
@@ -69,7 +85,7 @@ Rules:
 """
 
         response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",  # ✅ Fixed: no trailing spaces
+            "https://openrouter.ai/api/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
@@ -116,5 +132,5 @@ Rules:
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))  # ✅ Use 8080 for Cloud Run
+    port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=False)
