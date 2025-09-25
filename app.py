@@ -15,7 +15,7 @@ load_dotenv()
 # If you have multiple allowed origins (like localhost), use a list:
 # ALLOWED_ORIGINS = ["https://your-project-id.web.app", "http://localhost:3000"]
 
-FIREBASE_FRONTEND_URL = "https://my-web-app-41120.web.app" 
+FIREBASE_FRONTEND_URL = "URL: https://klint-lesson-plan-gen.web.app" 
 # =========================================================
 
 # Create app
