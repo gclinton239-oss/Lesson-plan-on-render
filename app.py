@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, request, jsonify
 import requests
 import os
@@ -9,18 +8,13 @@ from flask_cors import CORS
 load_dotenv()
 
 # =========================================================
-# ✅ CORRECTED: Use ONLY the exact frontend URL (no extra text/spaces)
-# Replace this with your actual frontend URL on Render
-FIREBASE_FRONTEND_URL = "https://lesson-plan-frontend.onrender.com"
+# ✅ Use ONLY your frontend Render URL
+FRONTEND_URL = "https://lesson-plan-frontend.onrender.com"
 # =========================================================
 
 # Create app
 app = Flask(__name__)
-
-# =========================================================
-# ✅ CORRECTED: Proper CORS configuration
-CORS(app, origins=[FIREBASE_FRONTEND_URL])
-# =========================================================
+CORS(app, origins=[FRONTEND_URL])
 
 # Root route – test with http://localhost:5000
 @app.route("/")
@@ -34,10 +28,20 @@ def home():
 @app.route("/generate", methods=["POST"])
 def generate():
     data = request.get_json()
-    prompt = data.get("prompt", "").strip()
 
-    if not prompt:
-        return jsonify({"error": "No prompt provided"}), 400
+    # Collect all possible inputs from frontend
+    class_level = data.get("class_level", "Basic 7")
+    lesson = data.get("lesson", "1")
+    strand = data.get("strand", "")
+    content_standard = data.get("content_standard", "")
+    performance_indicator = data.get("performance_indicator", "")
+    exemplars = data.get("exemplars", [])
+    tlrs = data.get("tlrs", "")
+    keywords = data.get("keywords", [])
+
+    # Ensure exemplars is a list
+    if isinstance(exemplars, str):
+        exemplars = [e.strip() for e in exemplars.split(",") if e.strip()]
 
     # Get API key securely
     api_key = os.environ.get("OPENROUTER_API_KEY")
@@ -45,41 +49,48 @@ def generate():
         return jsonify({"error": "API key not set in environment"}), 500
 
     try:
-        # Enhanced prompt with strict formatting instructions
+        # Strong structured prompt
         system_message = """
-You are an expert Ghanaian lesson planner for ICT, Science, or other subjects.
-You must generate responses in the following strict format:
+You are an expert Ghanaian lesson planner.
+You MUST return output strictly in valid JSON with this structure:
 
-Teacher-Learner Activities:
-1. [Specific activity related to first exemplar, using the T/L Resources].
-2. [Specific activity related to second exemplar, using the T/L Resources].
-...
-
-[KEY CONCEPT 1 IN ALL CAPS]
-Explanation of the concept in simple, clear language. Use real-life examples relevant to Ghanaian learners.
-
-[KEY CONCEPT 2 IN ALL CAPS]
-Explanation of the next concept...
-
-Exercise;
-1. Question based on first concept.<br>
-2. Question based on second concept.<br>
-...
+{
+  "starter": "Warm-up activity connected to the topic and class level.",
+  "activities": [
+    {
+      "activity": "Teacher-learner activity based on exemplar 1 and TLRs",
+      "note": "Supporting notes/explanation for this activity",
+      "assessment": "Assessment question related to this activity"
+    },
+    {
+      "activity": "Teacher-learner activity based on exemplar 2 and TLRs",
+      "note": "Supporting notes/explanation",
+      "assessment": "Assessment question"
+    }
+  ]
+}
 
 Rules:
-- Start with "Teacher-Learner Activities:" followed by numbered activities (1., 2., etc.).
-- DO NOT use "Using T/LR," at the beginning of activities.
-- Write activities in clear, instructional language (e.g., "Guide learners to discuss...").
-- Each activity must match one exemplar.
-- Use ALL CAPS for concept headings (e.g., ELECTRONIC SPREADSHEET).
-- Provide one explanation per concept.
-- End with "Exercise;" followed by numbered questions with <br> tags.
-- Do not add extra sections or commentary.
-- Use only the information provided.
+- Starter must be an engaging warm-up activity related to the lesson and class level.
+- The number of activities MUST equal the number of exemplars provided.
+- Each activity MUST use the given exemplar and the TLRs.
+- Each activity MUST include a supporting note AND one assessment question.
+- Do not include any extra commentary outside the JSON.
+"""
+
+        user_message = f"""
+Class level: {class_level}
+Lesson: {lesson}
+Strand: {strand}
+Content Standard: {content_standard}
+Performance Indicator: {performance_indicator}
+Exemplars: {exemplars}
+T/L Resources: {tlrs}
+Keywords: {keywords}
 """
 
         response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",  # ✅ Fixed: removed trailing spaces
+            "https://openrouter.ai/api/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
@@ -88,10 +99,10 @@ Rules:
                 "model": "deepseek/deepseek-r1:free",
                 "messages": [
                     {"role": "system", "content": system_message.strip()},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": user_message.strip()}
                 ],
                 "temperature": 0.5,
-                "max_tokens": 1024,
+                "max_tokens": 1200,
                 "top_p": 0.9,
                 "frequency_penalty": 0.2,
                 "presence_penalty": 0.2
@@ -100,21 +111,19 @@ Rules:
 
         if response.status_code == 200:
             result = response.json()
-            content = result["choices"][0]["message"]["content"].strip()
+            raw_output = result["choices"][0]["message"]["content"].strip()
 
-            # Optional: Add post-processing to fix common formatting issues
-            if "Exercise;" not in content and "exercise;" not in content:
-                if "Assessment;" in content:
-                    content = content.replace("Assessment;", "Exercise;")
-                else:
-                    if content.count("<br>") >= 2:
-                        last_br = content.rfind("<br>")
-                        if last_br != -1:
-                            end = content[last_br+6:].strip()
-                            if end.isdigit() or end == "":
-                                content += "\nExercise;\n1. What did you learn today?<br>\n2. How can you apply this?<br>\n3. Any questions?"
+            # Ensure JSON-safe return
+            import json
+            try:
+                structured = json.loads(raw_output)
+            except Exception:
+                return jsonify({
+                    "error": "AI returned invalid JSON",
+                    "raw": raw_output
+                }), 500
 
-            return jsonify({"content": content})
+            return jsonify(structured)
         else:
             return jsonify({
                 "error": f"AI Error: {response.status_code}",
