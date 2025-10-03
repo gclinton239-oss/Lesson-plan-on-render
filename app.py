@@ -13,7 +13,7 @@ FRONTEND_URL = "https://lesson-plan-frontend.onrender.com"
 
 # Create app
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=[FRONTEND_URL])
 
 @app.route("/")
 def home():
@@ -96,6 +96,7 @@ Rules:
 - Return ONLY content, no extra formatting.
 """
 
+    # --- Start of the corrected block (formerly lines 100 to 139) ---
     try:
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -114,7 +115,8 @@ Rules:
                 "top_p": 0.9,
                 "frequency_penalty": 0.2,
                 "presence_penalty": 0.2
-            }
+            },
+            timeout=100  # Added timeout for stability
         )
 
         if response.status_code == 200:
@@ -135,7 +137,9 @@ Rules:
             return jsonify({"error": f"AI Error: {response.status_code}", "details": response.text}), response.status_code
 
     except Exception as e:
+        # This catch-all exception block must be properly indented
         return jsonify({"error": str(e)}), 500
+    # --- End of the corrected block ---
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
