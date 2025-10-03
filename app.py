@@ -13,7 +13,7 @@ FRONTEND_URL = "https://lesson-plan-frontend.onrender.com"
 
 # Create app
 app = Flask(__name__)
-CORS(app, origins=[FRONTEND_URL])
+CORS(app)
 
 @app.route("/")
 def home():
