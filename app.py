@@ -90,7 +90,7 @@ Rules:
         }
 
         model = genai.GenerativeModel(
-            model_name="Gemini 2.5-flash",
+            model_name="gemini-2.5-flash",
             system_instruction=system_instruction.strip()
         )
 
