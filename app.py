@@ -1,12 +1,19 @@
 from flask import Flask, request, jsonify
-import requests
 import os
 from dotenv import load_dotenv
 from flask_cors import CORS
 import json
+import google.generativeai as genai  # <-- NEW IMPORT
 
 # Load environment variables
 load_dotenv()
+
+# Configure Gemini once at startup
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    print("⚠️ WARNING: GEMINI_API_KEY not found in environment")
+
+genai.configure(api_key=GEMINI_API_KEY)
 
 # Frontend URL
 FRONTEND_URL = "https://lesson-plan-frontend.onrender.com"
@@ -53,93 +60,61 @@ Content Standard: {content_standard}
 Performance Indicator: {performance_indicator}
 Exemplars: {exemplars}
 T/L Resources: {tlrs}
-Phase Durations: Phase 1 = {phase1_duration}, Phase 2 = {phase2_duration}, Phase 3 = {phase3_duration}
+Phase Durations: Phase 1 = {phase1_duration} minutes, Phase 2 = {phase2_duration} minutes, Phase 3 = {phase3_duration} minutes
 """
 
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if not api_key:
-        return jsonify({"error": "API key not set in environment"}), 500
-
-    system_message = f"""
-You are an expert Ghanaian lesson planner. Generate a lesson exactly in this structure:
-
-PHASE 1: STARTER
-- Generate a short warm-up (≤ {phase1_duration} minutes) using only the teacher-provided TLRs.
-
-PHASE 2: MAIN
-- Generate step-by-step, actionable, learner-centered activities based ONLY on the exemplars and TLRs.
-- Organize activities like this:
-1. First actionable activity
-2. Second actionable activity
-...
-- Do NOT display the exemplars themselves.
-
-NOTES
-- For each Phase 2 activity, generate concise notes capturing the core content of the activity (students can copy for later learning).
-- Structure notes like the Ecosystem example (with headings for Biotic, Abiotic, Types of Ecosystems, etc.).
-- Include TLR references where necessary.
-
-ASSESSMENT
-- Generate 1–1 questions for each activity based on exemplars.
-- Organize as:
-1. First question
-2. Second question
-...
-
-PHASE 3: REFLECTION
-- Generate reflective oral questions (≤ {phase3_duration} minutes) based on the lesson.
+    system_instruction = f"""
+You are an expert Ghanaian lesson planner. Generate a lesson plan in strict JSON format with these keys:
+- "phase1": string (starter activity, ≤{phase1_duration} minutes, using only TLRs)
+- "phase2": string (step-by-step, learner-centered activities based ONLY on exemplars and TLRs; do NOT list exemplars)
+- "assessment": string (1–3 numbered assessment questions based on activities, e.g., "1. ...\n2. ...")
+- "phase3": string (reflective oral questions for ≤{phase3_duration} minutes)
 
 Rules:
-- Display durations only at the top of each phase column.
 - Use simple Ghanaian context examples.
-- Return the result as structured JSON with keys: phase1, phase2, assessment, phase3.
-- Return ONLY content, no extra formatting.
+- Include concise "Notes" section within phase2 if needed (e.g., under headings like "Biotic Factors").
+- Return ONLY valid JSON — no markdown, no extra text.
 """
 
-    # --- Start of the corrected block (formerly lines 100 to 139) ---
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
+        # Define JSON schema for structured output
+        schema = {
+            "type": "OBJECT",
+            "properties": {
+                "phase1": {"type": "STRING"},
+                "phase2": {"type": "STRING"},
+                "assessment": {"type": "STRING"},
+                "phase3": {"type": "STRING"}
             },
-            json={
-                "model": "deepseek/deepseek-r1:free",
-                "messages": [
-                    {"role": "system", "content": system_message.strip()},
-                    {"role": "user", "content": user_message.strip()}
-                ],
-                "temperature": 0.5,
-                "max_tokens": 2000,
-                "top_p": 0.9,
-                "frequency_penalty": 0.2,
-                "presence_penalty": 0.2
-            },
-            timeout=100  # Added timeout for stability
+            "required": ["phase1", "phase2", "assessment", "phase3"]
+        }
+
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction=system_instruction.strip()
         )
 
-        if response.status_code == 200:
-            result = response.json()
-            choices = result.get("choices", [])
-            if choices and "message" in choices[0] and "content" in choices[0]["message"]:
-                raw_output = choices[0]["message"]["content"].strip()
-                # Attempt to parse JSON from AI
-                try:
-                    ai_json = json.loads(raw_output)
-                    return jsonify(ai_json)  # Returns phase1, phase2, assessment, phase3 separately
-                except json.JSONDecodeError:
-                    # Fallback: return raw content if AI didn't produce valid JSON
-                    return jsonify({"content": raw_output})
-            else:
-                return jsonify({"error": "No content returned from AI"}), 500
-        else:
-            return jsonify({"error": f"AI Error: {response.status_code}", "details": response.text}), response.status_code
+        response = model.generate_content(
+            user_message.strip(),
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=schema,
+                temperature=0.5,
+                max_output_tokens=2000
+            )
+        )
+
+        # Parse and return JSON
+        ai_json = json.loads(response.text)
+        return jsonify(ai_json)
 
     except Exception as e:
-        # This catch-all exception block must be properly indented
-        return jsonify({"error": str(e)}), 500
-    # --- End of the corrected block ---
+        error_msg = str(e)
+        print("Gemini Error:", error_msg)
+        return jsonify({
+            "error": "AI generation failed",
+            "details": error_msg
+        }), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
