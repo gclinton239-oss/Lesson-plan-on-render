@@ -12,16 +12,13 @@ load_dotenv()
 # --- Gemini Setup ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
+# Check for API key immediately on startup
 if not GEMINI_API_KEY:
-    print("WARNING: GEMINI_API_KEY environment variable not set.")
+    raise ValueError("GEMINI_API_KEY environment variable not set.")
 
-try:
-    client = genai.Client(api_key=GEMINI_API_KEY)
-except Exception as e:
-    print(f"Failed to initialize Gemini Client: {e}")
-    client = None
-
-GEMINI_MODEL = "gemini-2.5-flash"
+# Initialize the Gemini Client
+client = genai.Client(api_key=GEMINI_API_KEY)
+GEMINI_MODEL = "gemini-2.5-flash" # Use a fast model for generation tasks
 # --------------------
 
 # Frontend URL
@@ -35,16 +32,14 @@ CORS(app, origins=[FRONTEND_URL])
 def home():
     return jsonify({
         "status": "success",
-        "message": f"Backend is Running! Using {GEMINI_MODEL}."
+        "message": "Backend is Running! Connect to /generate"
     })
 
 @app.route("/generate", methods=["POST"])
 def generate():
-    if not client:
-        return jsonify({"error": "AI client not initialized. Check GEMINI_API_KEY."}), 500
-         
     data = request.get_json()
 
+    # Extract fields safely
     class_level = data.get("class_level", "Basic 7")
     lesson = data.get("lesson", "1")
     strand = data.get("strand", "")
@@ -52,11 +47,13 @@ def generate():
     performance_indicator = data.get("performance_indicator", "")
     exemplars = data.get("exemplars", [])
     tlrs = data.get("tlrs", "")
-    total_duration = int(data.get("duration", 70)) 
+    total_duration = int(data.get("duration", 70)) # Ensure integer
 
+    # Ensure exemplars is a list
     if isinstance(exemplars, str):
         exemplars = [e.strip() for e in exemplars.split(",") if e.strip()]
 
+    # Phase durations
     phase1_duration = min(10, int(total_duration * 0.15))
     phase3_duration = min(10, int(total_duration * 0.15))
     phase2_duration = total_duration - (phase1_duration + phase3_duration)
@@ -72,7 +69,7 @@ T/L Resources: {tlrs}
 Phase Durations: Phase 1 = {phase1_duration}, Phase 2 = {phase2_duration}, Phase 3 = {phase3_duration}
 """
     
-    # --- UPDATED SYSTEM MESSAGE (Removed ASSESSMENT from the final structure list) ---
+    # System message is crucial for high-quality, structured output
     system_message = f"""
 You are an expert Ghanaian lesson planner. Generate a lesson exactly in this structure:
 
@@ -80,8 +77,7 @@ PHASE 1: STARTER
 - Generate a short warm-up (≤ {phase1_duration} minutes) using only the teacher-provided TLRs.
 
 PHASE 2: MAIN
-- **CRITICAL**: This is the core of the lesson. Generate detailed, step-by-step, actionable, learner-centered activities based ONLY on the exemplars and TLRs.
-- This section MUST NOT be empty.
+- Generate step-by-step, actionable, learner-centered activities based ONLY on the exemplars and TLRs.
 - Organize activities like this:
 1. First actionable activity
 2. Second actionable activity
@@ -89,12 +85,11 @@ PHASE 2: MAIN
 
 NOTES
 - For each Phase 2 activity, generate concise notes capturing the core content of the activity (students can copy for later learning).
-- CRITICAL FORMATTING: Structure notes precisely like the 'Ecosystem' example: Use clear headings (e.g., 'Ecosystem:', 'Biotic components', 'Abiotic components', 'Types of Ecosystems:'), followed by definitions/explanations.
+- Structure notes like the Ecosystem example (with headings for Biotic, Abiotic, Types of Ecosystems, etc.).
 - Include TLR references where necessary.
 
 ASSESSMENT
 - Generate 1–1 questions for each activity based on exemplars.
-- CRITICAL FORMATTING: The value for the 'assessment' key MUST be a SINGLE STRING containing all the questions, separated by newlines.
 - Organize as:
 1. First question
 2. Second question
@@ -106,81 +101,63 @@ PHASE 3: REFLECTION
 Rules:
 - Display durations only at the top of each phase column.
 - Use simple Ghanaian context examples.
-- Return the result as structured JSON with keys: phase1, **phase2 (MUST contain the main content and notes)**, **assessment**, phase3.
-- Return ONLY content, no extra formatting (no markdown blocks like ```json).
+- Return the result as structured JSON with keys: phase1, phase2, assessment, phase3.
+- Return ONLY content, no extra formatting.
 """
-    # ----------------------------------------------------
 
     try:
+        # Use the Gemini client to generate content
         response = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=[
+                {"role": "system", "parts": [{"text": system_message.strip()}]},
                 {"role": "user", "parts": [{"text": user_message.strip()}]}
             ],
             config=genai.types.GenerateContentConfig(
                 temperature=0.5,
-                system_instruction=system_message.strip() 
+                system_instruction=system_message.strip() # System message can also go here
             )
         )
 
+        # Check for blocked or empty response (handles the original 500 error scenario)
         if not response.text:
+            # Check for specific finish reasons (e.g., SAFETY, RECITATION)
             finish_reason = response.candidates[0].finish_reason.name if response.candidates else "UNKNOWN"
+            
             return jsonify({
                 "error": "AI generation blocked or empty.",
-                "details": f"Content was blocked due to finish reason: {finish_reason}."
+                "details": f"Content was blocked due to finish reason: {finish_reason}. Review your prompt for policy violations."
             }), 400
 
         raw_output = response.text.strip()
         
-        print(f"RAW AI OUTPUT: {raw_output}")
-
+        # Attempt to parse JSON from AI, which is required by the system message
         try:
+            # Clean up the output to ensure it starts with { and ends with }
+            # Some models may wrap the JSON in markdown blocks
             if raw_output.startswith("```json") and raw_output.endswith("```"):
                 json_string = raw_output.strip("```json").strip("```").strip()
             else:
                 json_string = raw_output
                 
             ai_json = json.loads(json_string)
-            
-            # Safeguard for list outputs (from previous fix)
-            for key in ['phase1', 'phase2', 'assessment', 'phase3']:
-                if key in ai_json and isinstance(ai_json[key], list):
-                    ai_json[key] = "\n".join(ai_json[key])
-
-            # --- CRITICAL FIX: Merge Assessment into Phase 2 ---
-            phase2_content = ai_json.get('phase2', '')
-            assessment_content = ai_json.get('assessment', '')
-
-            if assessment_content:
-                # Append Assessment content to Phase 2 with a clear header
-                ai_json['phase2'] = (
-                    phase2_content.strip() + 
-                    "\n\n\n**ASSESSMENT**\n\n" + 
-                    assessment_content.strip()
-                )
-            
-            # Remove the now redundant 'assessment' key from the final JSON
-            if 'assessment' in ai_json:
-                del ai_json['assessment']
-            # -------------------------------------------------
-            
-            if not ai_json.get('phase2'):
-                print("WARNING: Phase 2 content is empty despite successful generation.")
-                return jsonify({"error": "AI generated structure but Phase 2 content is empty. Try a different prompt."}), 500
-
             return jsonify(ai_json) 
             
         except json.JSONDecodeError:
+            # Fallback: if JSON parsing fails, return the raw text as a content field
             return jsonify({
                 "error": "AI returned content, but it was not valid JSON.", 
                 "content": raw_output
             }), 500
 
     except APIError as e:
+        # Catch specific API errors (e.g., network, key invalid)
         return jsonify({"error": f"Gemini API Error: {str(e)}"}), 500
     except Exception as e:
+        # Catch all other exceptions (e.g., connection issues)
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
+    # Note: debug=False is recommended for production environments like Render
     app.run(host="0.0.0.0", port=port, debug=False)
