@@ -3,25 +3,32 @@ import os
 from dotenv import load_dotenv
 from flask_cors import CORS
 import json
-import google.generativeai as genai  # <-- NEW IMPORT
+import google.generativeai as genai  # Gemini SDK
 
+# -------------------------------
 # Load environment variables
+# -------------------------------
 load_dotenv()
-
-# Configure Gemini once at startup
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
 if not GEMINI_API_KEY:
     print("⚠️ WARNING: GEMINI_API_KEY not found in environment")
 
+# Configure Gemini
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Frontend URL
+# -------------------------------
+# Flask Setup
+# -------------------------------
 FRONTEND_URL = "https://lesson-plan-frontend.onrender.com"
 
-# Create app
 app = Flask(__name__)
-CORS(app, origins=[FRONTEND_URL])
+CORS(CORS(app, origins=[FRONTEND_URL])
+)
 
+# -------------------------------
+# Routes
+# -------------------------------
 @app.route("/")
 def home():
     return jsonify({
@@ -29,30 +36,33 @@ def home():
         "message": "Backend is Running! Connect to /generate"
     })
 
+
 @app.route("/generate", methods=["POST"])
 def generate():
-    data = request.get_json()
+    try:
+        data = request.get_json()
 
-    # Extract fields safely
-    class_level = data.get("class_level", "Basic 7")
-    lesson = data.get("lesson", "1")
-    strand = data.get("strand", "")
-    content_standard = data.get("content_standard", "")
-    performance_indicator = data.get("performance_indicator", "")
-    exemplars = data.get("exemplars", [])
-    tlrs = data.get("tlrs", "")
-    total_duration = int(data.get("duration", 70))  # Ensure integer
+        # Extract user input safely
+        class_level = data.get("class_level", "Basic 7")
+        lesson = data.get("lesson", "1")
+        strand = data.get("strand", "")
+        content_standard = data.get("content_standard", "")
+        performance_indicator = data.get("performance_indicator", "")
+        exemplars = data.get("exemplars", [])
+        tlrs = data.get("tlrs", "")
+        total_duration = int(data.get("duration", 70))
 
-    # Ensure exemplars is a list
-    if isinstance(exemplars, str):
-        exemplars = [e.strip() for e in exemplars.split(",") if e.strip()]
+        # Ensure exemplars is a list
+        if isinstance(exemplars, str):
+            exemplars = [e.strip() for e in exemplars.split(",") if e.strip()]
 
-    # Phase durations
-    phase1_duration = min(10, int(total_duration * 0.15))
-    phase3_duration = min(10, int(total_duration * 0.15))
-    phase2_duration = total_duration - (phase1_duration + phase3_duration)
+        # Compute phase durations
+        phase1_duration = min(10, int(total_duration * 0.15))
+        phase3_duration = min(10, int(total_duration * 0.15))
+        phase2_duration = total_duration - (phase1_duration + phase3_duration)
 
-    user_message = f"""
+        # Compose prompt
+        user_message = f"""
 Class level: {class_level}
 Lesson: {lesson}
 Strand: {strand}
@@ -63,59 +73,73 @@ T/L Resources: {tlrs}
 Phase Durations: Phase 1 = {phase1_duration} minutes, Phase 2 = {phase2_duration} minutes, Phase 3 = {phase3_duration} minutes
 """
 
-    system_instruction = f"""
+        system_instruction = """
 You are an expert Ghanaian lesson planner. Generate a lesson plan in strict JSON format with these keys:
-- "phase1": string (starter activity, ≤{phase1_duration} minutes, using only TLRs)
-- "phase2": string (step-by-step, learner-centered activities based ONLY on exemplars and TLRs; do NOT list exemplars)
-- "assessment": string (1–3 numbered assessment questions based on activities, e.g., "1. ...\n2. ...")
-- "phase3": string (reflective oral questions for ≤{phase3_duration} minutes)
+{
+  "phase1": "starter activity using only TLRs",
+  "phase2": "step-by-step teaching activities based on exemplars and TLRs",
+  "assessment": "numbered questions for learners",
+  "phase3": "reflective oral questions for learners"
+}
 
 Rules:
-- Use simple Ghanaian context examples.
-- Include concise "Notes" section within phase2 if needed (e.g., under headings like "Biotic Factors").
-- Return ONLY valid JSON — no markdown, no extra text.
+- Use simple Ghanaian classroom examples.
+- Keep activities realistic, not robotic.
+- Return ONLY valid JSON — no markdown, no explanations.
+- Do not include any extra text or formatting.
 """
 
-    try:
-        # Define JSON schema for structured output
-        schema = {
-            "type": "OBJECT",
-            "properties": {
-                "phase1": {"type": "STRING"},
-                "phase2": {"type": "STRING"},
-                "assessment": {"type": "STRING"},
-                "phase3": {"type": "STRING"}
-            },
-            "required": ["phase1", "phase2", "assessment", "phase3"]
-        }
-
+        # -------------------------------
+        # Gemini Model Setup
+        # -------------------------------
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name="gemini-1.5-flash",  # Use "gemini-1.5-pro" if you have billing
             system_instruction=system_instruction.strip()
         )
 
+        # Generate response
         response = model.generate_content(
             user_message.strip(),
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                response_schema=schema,
-                temperature=0.5,
-                max_output_tokens=2000
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.6,
+                max_output_tokens=1500,
+                response_mime_type="application/json"
             )
         )
 
-        # Parse and return JSON
-        ai_json = json.loads(response.text)
-        return jsonify(ai_json)
+        # -------------------------------
+        # Handle Gemini Output (FIXED)
+        # -------------------------------
+        result_text = (
+            response.candidates[0].content.parts[0].text
+            if response.candidates
+            and response.candidates[0].content
+            and response.candidates[0].content.parts
+            else ""
+        ).strip()
+
+        if not result_text:
+            raise ValueError("Gemini returned an empty response")
+
+        try:
+            ai_json = json.loads(result_text)
+            return jsonify(ai_json)
+        except json.JSONDecodeError:
+            # Fallback if Gemini didn’t return valid JSON
+            print("⚠️ Gemini returned non-JSON response:\n", result_text)
+            return jsonify({"content": result_text})
 
     except Exception as e:
-        error_msg = str(e)
-        print("Gemini Error:", error_msg)
+        print("❌ Gemini Error:", str(e))
         return jsonify({
             "error": "AI generation failed",
-            "details": error_msg
+            "details": str(e)
         }), 500
 
+
+# -------------------------------
+# Run the Flask App
+# -------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=False)
