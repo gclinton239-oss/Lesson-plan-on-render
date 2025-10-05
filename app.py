@@ -21,7 +21,7 @@ except Exception as e:
     print(f"Failed to initialize Gemini Client: {e}")
     client = None
 
-GEMINI_MODEL = "gemini-2.5-pro"
+GEMINI_MODEL = "gemini-2.5-flash"
 # --------------------
 
 # Frontend URL
