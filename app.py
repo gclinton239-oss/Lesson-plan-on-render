@@ -13,20 +13,15 @@ load_dotenv()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
-    # Changed from raise ValueError to return an error if deploying without the key
     print("WARNING: GEMINI_API_KEY environment variable not set.")
-    # Client will still be initialized, but calls will fail unless the environment is corrected.
 
-# Initialize the Gemini Client
-# It's safer to initialize inside the request handler or verify API key presence
 try:
     client = genai.Client(api_key=GEMINI_API_KEY)
 except Exception as e:
     print(f"Failed to initialize Gemini Client: {e}")
     client = None
 
-# UPGRADED MODEL: Use Pro for better complex structured output adherence
-GEMINI_MODEL = "gemini-2.5-pro" 
+GEMINI_MODEL = "gemini-2.5-pro"
 # --------------------
 
 # Frontend URL
@@ -46,11 +41,10 @@ def home():
 @app.route("/generate", methods=["POST"])
 def generate():
     if not client:
-         return jsonify({"error": "AI client not initialized. Check GEMINI_API_KEY."}), 500
+        return jsonify({"error": "AI client not initialized. Check GEMINI_API_KEY."}), 500
          
     data = request.get_json()
 
-    # ... (Data extraction and duration calculation remain the same) ...
     class_level = data.get("class_level", "Basic 7")
     lesson = data.get("lesson", "1")
     strand = data.get("strand", "")
@@ -78,7 +72,7 @@ T/L Resources: {tlrs}
 Phase Durations: Phase 1 = {phase1_duration}, Phase 2 = {phase2_duration}, Phase 3 = {phase3_duration}
 """
     
-    # --- STRENGTHENED SYSTEM MESSAGE ---
+    # --- UPDATED SYSTEM MESSAGE (Removed ASSESSMENT from the final structure list) ---
     system_message = f"""
 You are an expert Ghanaian lesson planner. Generate a lesson exactly in this structure:
 
@@ -95,11 +89,12 @@ PHASE 2: MAIN
 
 NOTES
 - For each Phase 2 activity, generate concise notes capturing the core content of the activity (students can copy for later learning).
-- Structure notes like the Ecosystem example (with headings for Biotic, Abiotic, Types of Ecosystems, etc.).
+- CRITICAL FORMATTING: Structure notes precisely like the 'Ecosystem' example: Use clear headings (e.g., 'Ecosystem:', 'Biotic components', 'Abiotic components', 'Types of Ecosystems:'), followed by definitions/explanations.
 - Include TLR references where necessary.
 
 ASSESSMENT
 - Generate 1–1 questions for each activity based on exemplars.
+- CRITICAL FORMATTING: The value for the 'assessment' key MUST be a SINGLE STRING containing all the questions, separated by newlines.
 - Organize as:
 1. First question
 2. Second question
@@ -111,10 +106,10 @@ PHASE 3: REFLECTION
 Rules:
 - Display durations only at the top of each phase column.
 - Use simple Ghanaian context examples.
-- Return the result as structured JSON with keys: phase1, **phase2 (MUST be the main content)**, assessment, phase3.
+- Return the result as structured JSON with keys: phase1, **phase2 (MUST contain the main content and notes)**, **assessment**, phase3.
 - Return ONLY content, no extra formatting (no markdown blocks like ```json).
 """
-    # ----------------------------------
+    # ----------------------------------------------------
 
     try:
         response = client.models.generate_content(
@@ -124,7 +119,6 @@ Rules:
             ],
             config=genai.types.GenerateContentConfig(
                 temperature=0.5,
-                # Using the system_instruction parameter is more reliable for system prompts
                 system_instruction=system_message.strip() 
             )
         )
@@ -138,12 +132,9 @@ Rules:
 
         raw_output = response.text.strip()
         
-        # LOGGING: Print the raw output here to inspect the JSON payload
         print(f"RAW AI OUTPUT: {raw_output}")
-        
-        # Attempt to parse JSON from AI
+
         try:
-            # Simple cleanup for common markdown wrapper
             if raw_output.startswith("```json") and raw_output.endswith("```"):
                 json_string = raw_output.strip("```json").strip("```").strip()
             else:
@@ -151,11 +142,31 @@ Rules:
                 
             ai_json = json.loads(json_string)
             
-            # --- FINAL CHECK FOR EMPTY PHASE 2 ---
+            # Safeguard for list outputs (from previous fix)
+            for key in ['phase1', 'phase2', 'assessment', 'phase3']:
+                if key in ai_json and isinstance(ai_json[key], list):
+                    ai_json[key] = "\n".join(ai_json[key])
+
+            # --- CRITICAL FIX: Merge Assessment into Phase 2 ---
+            phase2_content = ai_json.get('phase2', '')
+            assessment_content = ai_json.get('assessment', '')
+
+            if assessment_content:
+                # Append Assessment content to Phase 2 with a clear header
+                ai_json['phase2'] = (
+                    phase2_content.strip() + 
+                    "\n\n\n**ASSESSMENT**\n\n" + 
+                    assessment_content.strip()
+                )
+            
+            # Remove the now redundant 'assessment' key from the final JSON
+            if 'assessment' in ai_json:
+                del ai_json['assessment']
+            # -------------------------------------------------
+            
             if not ai_json.get('phase2'):
-                 print("WARNING: Phase 2 content is empty despite successful generation.")
-                 # Fallback: Return an error that indicates the AI failed on the content
-                 return jsonify({"error": "AI generated structure but Phase 2 content is empty. Try a different prompt."}), 500
+                print("WARNING: Phase 2 content is empty despite successful generation.")
+                return jsonify({"error": "AI generated structure but Phase 2 content is empty. Try a different prompt."}), 500
 
             return jsonify(ai_json) 
             
