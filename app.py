@@ -71,38 +71,31 @@ Phase Durations: Phase 1 = {phase1_duration}, Phase 2 = {phase2_duration}, Phase
     
     # System message is crucial for high-quality, structured output
     system_message = f"""
-You are an expert Ghanaian lesson planner. Generate a lesson exactly in this structure:
+You are an expert Ghanaian lesson planner. Generate a lesson plan based on the provided inputs.
 
-PHASE 1: STARTER
-- Generate a short warm-up (≤ {phase1_duration} minutes) using only the teacher-provided TLRs.
+Crucial Instruction: Return the result ONLY as a structured JSON object with the following four keys, where 'phase2' is a nested object:
 
-PHASE 2: MAIN
-- Generate step-by-step, actionable, learner-centered activities based ONLY on the exemplars and TLRs.
-- Organize activities like this:
-1. First actionable activity
-2. Second actionable activity
-...
+{{
+  "phase1": "A numbered list of steps for the starter (max {phase1_duration} minutes), separated by newlines.",
+  "phase2": {{
+    "activities": ["List of step-by-step, actionable, learner-centered activities."],
+    "content": {{
+      "Primary Heading 1": ["Concise notes for this topic (e.g., Definition)"],
+      "Primary Heading 2": ["Concise notes for this topic (e.g., Types of X)"],
+      "Primary Heading 3": ["Concise notes for this topic (e.g., Importance)"]
+    }},
+    "assessment": ["List of 1-3 questions for formative assessment."]
+  }},
+  "phase3": "A numbered list of reflective questions for the plenary (max {phase3_duration} minutes), separated by newlines."
+}}
 
-NOTES
-- For each Phase 2 activity, generate concise notes capturing the core content of the activity (students can copy for later learning).
-- Structure notes like the Ecosystem example (with headings for Biotic, Abiotic, Types of Ecosystems, etc.).
-- Include TLR references where necessary.
-
-ASSESSMENT
-- Generate 1–1 questions for each activity based on exemplars.
-- Organize as:
-1. First question
-2. Second question
-...
-
-PHASE 3: REFLECTION
-- Generate reflective oral questions (≤ {phase3_duration} minutes) based on the lesson.
-
-Rules:
-- Display durations only at the top of each phase column.
+Rules for Content:
+- **PHASE 1:** Must use teacher-provided T/L Resources.
+- **PHASE 2 Activities:** Must be based ONLY on the exemplars and T/L Resources.
+- **PHASE 2 Content:** Headings should be capitalized and underlined (e.g., 'Types of Magnets'). Notes should be concise, not full paragraphs.
+- **PHASE 3:** Generate reflective oral questions based on the lesson's objectives.
 - Use simple Ghanaian context examples.
-- Return the result as structured JSON with keys: phase1, phase2, assessment, phase3.
-- Return ONLY content, no extra formatting.
+- Do not include the '```json' or any text outside of the JSON object.
 """
 
     try:
