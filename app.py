@@ -110,7 +110,6 @@ Rules:
         response = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=[
-                {"role": "system", "parts": [{"text": system_message.strip()}]},
                 {"role": "user", "parts": [{"text": user_message.strip()}]}
             ],
             config=genai.types.GenerateContentConfig(
@@ -118,7 +117,6 @@ Rules:
                 system_instruction=system_message.strip() # System message can also go here
             )
         )
-
         # Check for blocked or empty response (handles the original 500 error scenario)
         if not response.text:
             # Check for specific finish reasons (e.g., SAFETY, RECITATION)
