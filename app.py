@@ -121,6 +121,7 @@ Rules for Content:
             }), 400
 
         raw_output = response.text.strip()
+        raw_output = raw_output.replace("*", "")
         
         # Attempt to parse JSON from AI, which is required by the system message
         try:
