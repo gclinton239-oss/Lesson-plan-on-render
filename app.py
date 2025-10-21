@@ -22,7 +22,7 @@ GEMINI_MODEL = "gemini-2.5-flash" # Use a fast model for generation tasks
 # --------------------
 
 # Frontend URL
-FRONTEND_URL = "https://lesson-plan-frontend.onrender.com"
+FRONTEND_URL = "https://klintedu.onrender.com"
 
 # Create app
 app = Flask(__name__)
